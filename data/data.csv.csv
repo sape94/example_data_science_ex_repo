@@ -1,0 +1,3 @@
+tv_id,content_id,application,network,network_id,scheduled_program_start_time,scheduled_program_end_time,affiliate_call_sign,channel_content_offset_s,program_content_offset_s,dma,zip,start_time,end_time,duration,time_period,title_norm,episode_title,season,episode,release_date,title,title_id,season_id,service,content_type,exclude_title,is_exclusive
+0fee80b1cf1e8e09330b78f1db80830c2712d7ca,,YouTube,YouTube,,,,,,,525,31771,2022-12-08 15:34:36 UTC,2022-12-08 19:33:23 UTC,14327,2022-12,,,,,,,,,YouTube,,,
+5614db25f97608d949d5adb9ce597f2901af031a,,Netflix,Netflix,,,,,,,501,07060,2022-12-23 16:34:37 UTC,2022-12-23 16:42:07 UTC,450,2022-12,,,,,,,,,Netflix,,,
