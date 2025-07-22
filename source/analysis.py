@@ -7,11 +7,45 @@ import pandas as pd
 warnings.filterwarnings("ignore", category=UserWarning)
 
 class GapAnalysis:
+    """
+    A class for analyzing viewing gaps in streaming service data to determine 
+    subscription types (ad-supported vs ad-free).
+    
+    This class processes streaming data to identify gaps between viewing sessions,
+    categorizes these gaps, and uses gap patterns to infer whether users have
+    ad-supported or ad-free subscriptions.
+    
+    Attributes:
+        path_to_data (str): Path to the data file.
+        streaming_service (str): Name of the streaming service to analyze.
+        application_column (str): Column name containing application data.
+        df (pd.DataFrame): Filtered DataFrame containing only the specified streaming service data.
+        gap_analysis_df (pd.DataFrame): DataFrame with calculated gaps between sessions.
+        frequency_df (pd.DataFrame): DataFrame with gap frequency analysis.
+    
+    Example:
+        >>> analyzer = GapAnalysis('./data/streaming.csv', 'Netflix')
+        >>> subscription_types = analyzer.categorize_subscription_types()
+        >>> print(subscription_types.head())
+    """
     
     def __init__(self, 
                  path_to_data: str,
                  streaming_service: str,
                  application_column: str = 'application'):
+        """
+        Initialize the GapAnalysis with data loading and preprocessing.
+        
+        Args:
+            path_to_data (str): Path to the CSV file containing streaming data.
+            streaming_service (str): Name of the streaming service to filter and analyze.
+            application_column (str, optional): Column name containing application data. 
+                                              Defaults to 'application'.
+        
+        Raises:
+            FileNotFoundError: If the specified data file path does not exist.
+            ValueError: If the file format is not supported (non-CSV).
+        """
         self.path_to_data = path_to_data
         
         df = self._load_data()
@@ -28,6 +62,16 @@ class GapAnalysis:
         self.frequency_df = self._create_gap_frequency_df(self.gap_analysis_df)
         
     def _load_data(self) -> pd.DataFrame:
+        """
+        Load data from a CSV file into a pandas DataFrame.
+        
+        Returns:
+            pd.DataFrame: The loaded DataFrame from the CSV file.
+            
+        Raises:
+            FileNotFoundError: If the specified file path does not exist.
+            ValueError: If the file format is not CSV.
+        """
         if not os.path.exists(self.path_to_data):
             raise FileNotFoundError(f"The file '{self.path_to_data}' was not found.")
         
@@ -40,6 +84,15 @@ class GapAnalysis:
         
     def _tv_counts_df(self,
                       tv_id_col: str = 'tv_id') -> pd.DataFrame:
+        """
+        Create a DataFrame with TV ID counts to identify TVs with multiple sessions.
+        
+        Args:
+            tv_id_col (str, optional): Column name for TV identifier. Defaults to 'tv_id'.
+            
+        Returns:
+            pd.DataFrame: DataFrame with TV IDs and their occurrence counts.
+        """
         tv_counts = self.df[tv_id_col].value_counts().reset_index()
         tv_counts.columns = [tv_id_col, 'count']
         return tv_counts
@@ -47,13 +100,47 @@ class GapAnalysis:
     def _merge_tv_counts(self, 
                         tv_counts_df: pd.DataFrame, 
                         tv_id_col: str = 'tv_id') -> pd.DataFrame:
+        """
+        Merge TV counts with main DataFrame and filter to keep only TVs with multiple sessions.
+        
+        This method modifies self.df in place to include count information and removes
+        TVs that have only one viewing session (as gaps cannot be calculated).
+        
+        Args:
+            tv_counts_df (pd.DataFrame): DataFrame containing TV ID counts.
+            tv_id_col (str, optional): Column name for TV identifier. Defaults to 'tv_id'.
+            
+        Returns:
+            pd.DataFrame: The modified DataFrame (also updates self.df).
+        """
         self.df = self.df.merge(tv_counts_df, on=tv_id_col, how='left')
         self.df = self.df[self.df['count'] > 1].reset_index(drop=True)
         
     def _create_session_id_col(self) -> pd.DataFrame:
+        """
+        Create a unique session identifier by combining TV ID and content ID.
+        
+        This method creates a 'tv_content_id' column that uniquely identifies
+        each viewing session for gap analysis.
+        
+        Returns:
+            pd.DataFrame: The modified DataFrame with new session ID column.
+        """
         self.df['tv_content_id'] = self.df['tv_id'].astype(str) + '_' + self.df['content_id'].astype(str)
         
     def _create_gap_analysis_df(self) -> pd.DataFrame:
+        """
+        Create a comprehensive gap analysis DataFrame with calculated time gaps between sessions.
+        
+        This method processes each unique TV-content combination to:
+        1. Sort sessions by start time
+        2. Calculate gaps between consecutive sessions
+        3. Convert gaps to seconds for analysis
+        
+        Returns:
+            pd.DataFrame: DataFrame containing gap analysis with columns for gap times,
+                         gap durations in seconds, and session information.
+        """
         sub_dfs = []
         for value in self.df['tv_content_id'].unique():
             sub_df = self.df[self.df['tv_content_id'] == value].reset_index(drop=True)
@@ -71,6 +158,18 @@ class GapAnalysis:
     
     def _create_gap_frequency_df(self,
                                  gap_analysis_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create a frequency distribution of gaps organized into time ranges.
+        
+        This method bins gap durations into 15-second intervals and counts
+        the frequency of gaps in each range for each TV.
+        
+        Args:
+            gap_analysis_df (pd.DataFrame): DataFrame containing gap analysis data.
+            
+        Returns:
+            pd.DataFrame: DataFrame with gap ranges and their frequencies per TV.
+        """
         df_clean = gap_analysis_df.dropna(subset=['gap_seconds']).copy()
     
         max_gap = df_clean['gap_seconds'].max()
@@ -98,7 +197,37 @@ class GapAnalysis:
     def categorize_subscription_types(self, 
                                       ad_threshold=3, 
                                       ad_frequency_threshold=0.6):
+        """
+        Categorize TV subscribers as having ad-supported, ad-free, or mixed subscriptions
+        based on viewing gap patterns.
+        
+        This method analyzes gap patterns to infer subscription types:
+        - Ad-supported: Frequent short gaps (≤60 seconds) indicating ad breaks
+        - Ad-free: Predominantly longer gaps indicating natural viewing breaks
+        - Mixed/Uncertain: Ambiguous patterns that don't clearly fit either category
+        
+        Args:
+            ad_threshold (int, optional): Minimum number of ad-like gaps required 
+                                        for ad-supported classification. Defaults to 3.
+            ad_frequency_threshold (float, optional): Minimum proportion of ad-like gaps 
+                                                    for ad-supported classification. Defaults to 0.6.
+        
+        Returns:
+            pd.DataFrame: DataFrame containing subscription type analysis with columns:
+                - tv_id: Television identifier
+                - subscription_type: Inferred subscription type
+                - total_gaps: Total number of gaps observed
+                - ad_like_gaps: Number of short gaps (≤60 seconds)
+                - long_gaps: Number of longer gaps (>60 seconds)
+                - ad_gap_proportion: Proportion of gaps that are ad-like
+                - most_common_ranges: Most frequent gap ranges for this TV
+                
+        Example:
+            >>> results = analyzer.categorize_subscription_types(ad_threshold=5, ad_frequency_threshold=0.7)
+            >>> print(results[results['subscription_type'] == 'ad_supported'].head())
+        """
         def _extract_upper_bound(gap_range):
+            """Extract the upper bound from a gap range string (e.g., '0-15' -> 15)."""
             return int(gap_range.split('-')[1])
         
         self.frequency_df = self.frequency_df.copy()
