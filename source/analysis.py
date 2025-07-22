@@ -25,6 +25,7 @@ class GapAnalysis:
         
         self.gap_analysis_df = self._create_gap_analysis_df()
         
+        self.frequency_df = self._create_gap_frequency_df(self.gap_analysis_df)
         
     def _load_data(self) -> pd.DataFrame:
         if not os.path.exists(self.path_to_data):
@@ -68,3 +69,28 @@ class GapAnalysis:
         gap_analysis_df = pd.concat(sub_dfs, ignore_index=True)
         return gap_analysis_df
     
+    def _create_gap_frequency_df(self,
+                                 gap_analysis_df: pd.DataFrame) -> pd.DataFrame:
+        df_clean = gap_analysis_df.dropna(subset=['gap_seconds']).copy()
+    
+        max_gap = df_clean['gap_seconds'].max()
+        if pd.isna(max_gap) or max_gap < 0:
+            max_gap = 60
+        
+        bin_edges = list(range(0, int(max_gap) + 15, 15))
+        gap_labels = [f"{bin_edges[i]}-{bin_edges[i+1]}" for i in range(len(bin_edges) - 1)]
+        
+        df_clean['gap_range'] = pd.cut(
+            df_clean['gap_seconds'], 
+            bins=bin_edges, 
+            labels=gap_labels, 
+            right=False,
+            include_lowest=True
+        )
+        
+        frequency_df = (df_clean
+                    .groupby(['tv_id', 'gap_range'], observed=True)
+                    .size()
+                    .reset_index(name='frequency'))
+        
+        return frequency_df
