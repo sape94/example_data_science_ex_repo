@@ -32,7 +32,7 @@ class GapAnalysis:
             raise FileNotFoundError(f"The file '{self.path_to_data}' was not found.")
         
         if self.path_to_data.endswith('.csv'):
-            df = pd.read_csv(self.path_to_data)
+            df = pd.read_csv(self.path_to_data, low_memory=False)
             print('Dataframe loaded successfully.')
             return df
         else:
