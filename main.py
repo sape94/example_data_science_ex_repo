@@ -9,3 +9,4 @@ if __name__ == "__main__":
     print(gap_instance.df.head())
     print(gap_instance.gap_analysis_df.head())
     print(gap_instance.frequency_df.head())
+    print(gap_instance.categorize_subscription_types())

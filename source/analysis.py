@@ -94,3 +94,52 @@ class GapAnalysis:
                     .reset_index(name='frequency'))
         
         return frequency_df
+    
+    def categorize_subscription_types(self, 
+                                      ad_threshold=3, 
+                                      ad_frequency_threshold=0.6):
+        def _extract_upper_bound(gap_range):
+            return int(gap_range.split('-')[1])
+        
+        self.frequency_df = self.frequency_df.copy()
+        self.frequency_df['gap_upper_bound'] = self.frequency_df['gap_range'].apply(_extract_upper_bound)
+        
+        # ad-like gaps (less than 60 seconds) based on google search for ads' time on netflix or hulu
+        self.frequency_df['is_ad_gap'] = self.frequency_df['gap_upper_bound'] <= 60
+        
+        tv_metrics = []
+        
+        for tv_id in self.frequency_df['tv_id'].unique():
+            tv_data = self.frequency_df[self.frequency_df['tv_id'] == tv_id]
+            
+            total_gaps = tv_data['frequency'].sum()
+            ad_gaps = tv_data[tv_data['is_ad_gap']]['frequency'].sum()
+            long_gaps = tv_data[~tv_data['is_ad_gap']]['frequency'].sum()
+            
+            ad_gap_proportion = ad_gaps / total_gaps if total_gaps > 0 else 0
+            
+            most_common = tv_data.nlargest(3, 'frequency')['gap_range'].tolist()
+            
+            if total_gaps == 0:
+                subscription_type = 'insufficient_data'
+            elif ad_gaps >= ad_threshold and ad_gap_proportion >= ad_frequency_threshold:
+                subscription_type = 'ad_supported'
+            elif ad_gap_proportion < 0.3 and long_gaps > ad_gaps:
+                #long gaps, likely natural breaks
+                subscription_type = 'ad_free'
+            elif ad_gaps < 2:
+                subscription_type = 'ad_free' 
+            else:
+                subscription_type = 'mixed_or_uncertain'
+            
+            tv_metrics.append({
+                'tv_id': tv_id,
+                'subscription_type': subscription_type,
+                'total_gaps': total_gaps,
+                'ad_like_gaps': ad_gaps,
+                'long_gaps': long_gaps,
+                'ad_gap_proportion': round(ad_gap_proportion, 3),
+                'most_common_ranges': ', '.join(most_common[:3])
+            })
+        
+        return pd.DataFrame(tv_metrics)
