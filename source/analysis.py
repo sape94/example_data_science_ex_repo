@@ -1,5 +1,10 @@
 import os
+import warnings
 import pandas as pd 
+
+# just to avoid userwarnings from pandas when dealing with inferred formats
+# in production this should be handled more gracefully
+warnings.filterwarnings("ignore", category=UserWarning)
 
 class GapAnalysis:
     
@@ -14,6 +19,12 @@ class GapAnalysis:
         
         self.streaming_service = streaming_service
         self.application_column = application_column
+        
+        self._merge_tv_counts(self._tv_counts_df())
+        self._create_session_id_col()
+        
+        self.gap_analysis_df = self._create_gap_analysis_df()
+        
         
     def _load_data(self) -> pd.DataFrame:
         if not os.path.exists(self.path_to_data):
@@ -32,9 +43,28 @@ class GapAnalysis:
         tv_counts.columns = [tv_id_col, 'count']
         return tv_counts
     
-    def merge_tv_counts(self, 
+    def _merge_tv_counts(self, 
                         tv_counts_df: pd.DataFrame, 
                         tv_id_col: str = 'tv_id') -> pd.DataFrame:
         self.df = self.df.merge(tv_counts_df, on=tv_id_col, how='left')
         self.df = self.df[self.df['count'] > 1].reset_index(drop=True)
         
+    def _create_session_id_col(self) -> pd.DataFrame:
+        self.df['tv_content_id'] = self.df['tv_id'].astype(str) + '_' + self.df['content_id'].astype(str)
+        
+    def _create_gap_analysis_df(self) -> pd.DataFrame:
+        sub_dfs = []
+        for value in self.df['tv_content_id'].unique():
+            sub_df = self.df[self.df['tv_content_id'] == value].reset_index(drop=True)
+            if len(sub_df) > 1:
+                sub_df = sub_df[['tv_content_id', 'tv_id', 'content_id', 'start_time', 'end_time', 'duration', 'title', 'season_id']].sort_values(by='start_time', ascending=True).reset_index(drop=True)
+                sub_df['start_time'] = sub_df['start_time'].str.strip()
+                sub_df['start_time'] = pd.to_datetime(sub_df['start_time'])
+                sub_df['end_time'] = sub_df['end_time'].str.strip()
+                sub_df['end_time'] = pd.to_datetime(sub_df['end_time'])
+                sub_df['gap_vs_previous_session'] = sub_df['start_time'] - sub_df['end_time'].shift()
+                sub_df['gap_seconds'] = pd.to_timedelta(sub_df['gap_vs_previous_session']).dt.total_seconds()
+                sub_dfs.append(sub_df)
+        gap_analysis_df = pd.concat(sub_dfs, ignore_index=True)
+        return gap_analysis_df
+    
